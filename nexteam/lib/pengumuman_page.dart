@@ -1,13 +1,74 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nexteam/home_page.dart';
 import 'package:nexteam/agenda_page.dart';
 import 'package:nexteam/anggota_page.dart';
 import 'package:nexteam/profil_page.dart';
 
-class PengumumanPage extends StatelessWidget {
+// 1. Model Data Pengumuman
+class Announcement {
+  final int? id;
+  final String title;
+  final String content;
+  final String tag;
+  final DateTime createdAt;
+
+  Announcement({
+    this.id,
+    required this.title,
+    required this.content,
+    required this.tag,
+    required this.createdAt,
+  });
+
+  // Factory dari JSON Supabase
+  factory Announcement.fromMap(Map<String, dynamic> map) {
+    return Announcement(
+      id: map['id'],
+      title: map['title'] ?? 'Tanpa Judul',
+      content: map['content'] ?? '',
+      tag: map['tag'] ?? 'Info',
+      // Mengubah String ISO8601 dari Supabase ke DateTime
+      createdAt: DateTime.parse(map['created_at']).toLocal(), 
+    );
+  }
+
+  // Helper untuk menentukan warna Tag berdasarkan teks
+  Color get tagColor {
+    switch (tag) {
+      case 'Penting': return Colors.red;
+      case 'Update': return Colors.orange;
+      case 'Info': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  // Helper untuk menghitung "Waktu Lalu" (Time Ago)
+  String get timeAgo {
+    final Duration diff = DateTime.now().difference(createdAt);
+    if (diff.inDays > 0) return '${diff.inDays} hari lalu';
+    if (diff.inHours > 0) return '${diff.inHours} jam lalu';
+    if (diff.inMinutes > 0) return '${diff.inMinutes} menit lalu';
+    return 'Baru saja';
+  }
+}
+
+class PengumumanPage extends StatefulWidget {
   const PengumumanPage({super.key});
 
-  // --- FUNGSI NAVIGASI LENGKAP ---
+  @override
+  State<PengumumanPage> createState() => _PengumumanPageState();
+}
+
+class _PengumumanPageState extends State<PengumumanPage> {
+  
+  // Stream data realtime dari tabel 'announcements'
+  // Diurutkan berdasarkan created_at descending (terbaru di atas)
+  final _announcementStream = Supabase.instance.client
+      .from('announcements')
+      .stream(primaryKey: ['id'])
+      .order('created_at', ascending: false);
+
   void _onNavTapped(BuildContext context, int index) {
     Widget page;
     switch (index) {
@@ -23,7 +84,7 @@ class PengumumanPage extends StatelessWidget {
       case 3:
         return; // Sudah di halaman ini
       case 4:
-        page = const ProfilPage();
+        page = const ProfilPage(); // Pastikan import sesuai
         break;
       default:
         return;
@@ -39,6 +100,180 @@ class PengumumanPage extends StatelessWidget {
     );
   }
 
+  // --- FUNGSI INSERT KE SUPABASE ---
+  Future<void> _addAnnouncementToSupabase(String title, String content, String tag) async {
+    try {
+      await Supabase.instance.client.from('announcements').insert({
+        'title': title,
+        'content': content,
+        'tag': tag,
+        // created_at otomatis diisi oleh Supabase
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pengumuman berhasil diposting!')),
+        );
+        Navigator.pop(context); // Tutup dialog
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memposting: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // --- DIALOG UI ---
+  void _showAddAnnouncementDialog(BuildContext context) {
+    final TextEditingController titleController = TextEditingController();
+    final TextEditingController contentController = TextEditingController();
+    
+    // Variabel state untuk Dropdown Tag
+    String selectedTag = 'Info';
+    final List<String> tagOptions = ['Info', 'Penting', 'Update'];
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder( // Agar dropdown bisa berubah state-nya
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Input Judul
+                      _buildInputDecorated(
+                        icon: Icons.title,
+                        child: TextField(
+                          controller: titleController,
+                          decoration: const InputDecoration(
+                            hintText: "Judul pengumuman...",
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+                      
+                      // Dropdown Tag (Penting/Info/Update)
+                      _buildInputDecorated(
+                        icon: Icons.label,
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: selectedTag,
+                            isExpanded: true,
+                            items: tagOptions.map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              setStateDialog(() => selectedTag = newValue!);
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+
+                      // Input Isi
+                      _buildInputDecorated(
+                        icon: Icons.description,
+                        child: TextField(
+                          controller: contentController,
+                          maxLines: 4,
+                          decoration: const InputDecoration(
+                            hintText: "Isi Pengumuman...",
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      // Tombol DONE
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: isLoading ? null : () async {
+                            if (titleController.text.isNotEmpty && contentController.text.isNotEmpty) {
+                              setStateDialog(() => isLoading = true);
+                              
+                              await _addAnnouncementToSupabase(
+                                titleController.text,
+                                contentController.text,
+                                selectedTag,
+                              );
+                              // Dialog ditutup di dalam fungsi insert jika sukses
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF89CFF0), // Biru muda
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: isLoading
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white))
+                              : const Text(
+                                  "POST",
+                                  style: TextStyle(
+                                    color: Colors.white, 
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+
+  // Helper Desain Input
+  Widget _buildInputDecorated({required IconData icon, required Widget child}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: const Color(0xFF89CFF0),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: Colors.blue[800], size: 24),
+        ),
+        const SizedBox(width: 15),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF89CFF0), width: 2),
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,39 +282,70 @@ class PengumumanPage extends StatelessWidget {
         children: [
           _buildHeader(),
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(top: 100, left: 20, right: 20, bottom: 20),
-              child: Column(
-                children: [
-                  _buildAnnouncementCard(
-                    title: 'Pendaftaran Anggota Baru Dibuka!',
-                    content: 'Kami membuka kesempatan bagi mahasiswa baru untuk bergabung dengan BEM.\nPendaftaran dibuka mulai 5–15 Oktober 2025.',
-                    tag: 'Penting',
-                    tagColor: Colors.red,
-                    time: '2 jam lalu',
+            child: Column(
+              children: [
+                const SizedBox(height: 180), // Ruang untuk header biru
+                
+                // STREAM BUILDER
+                Expanded(
+                  child: StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _announcementStream,
+                    builder: (context, snapshot) {
+                      // 1. Loading
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final data = snapshot.data!;
+                      
+                      // 2. Kosong
+                      if (data.isEmpty) {
+                        return const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.notifications_off, size: 60, color: Colors.grey),
+                              SizedBox(height: 10),
+                              Text("Belum ada pengumuman.", style: TextStyle(color: Colors.grey)),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // 3. Ada Data
+                      return ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                        itemCount: data.length,
+                        itemBuilder: (context, index) {
+                          // Konversi JSON ke Object
+                          final item = Announcement.fromMap(data[index]);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 15.0),
+                            child: _buildAnnouncementCard(item),
+                          );
+                        },
+                      );
+                    },
                   ),
-                  const SizedBox(height: 15),
-                  _buildAnnouncementCard(
-                    title: 'Perubahan Jadwal Rapat Umum',
-                    content: 'Rapat umum yang dijadwalkan pada tanggal 8 Oktober dipindahkan ke tanggal 10 Oktober 2025 pukul 14.00 WIB.',
-                    tag: 'Update',
-                    tagColor: Colors.orange,
-                    time: '5 jam lalu',
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddAnnouncementDialog(context),
+        backgroundColor: const Color(0xFF0D99FF),
+        child: const Icon(Icons.add, color: Colors.white, size: 30),
       ),
       bottomNavigationBar: _buildBottomNav(context),
     );
   }
 
-  // WIDGET BUILDER UNTUK HEADER
   Widget _buildHeader() {
     return Container(
       height: 180, 
+      width: double.infinity,
       padding: const EdgeInsets.only(left: 25, right: 25, top: 60),
       decoration: const BoxDecoration(
         color: Color(0xFF0D99FF),
@@ -112,14 +378,7 @@ class PengumumanPage extends StatelessWidget {
     );
   }
 
-  // WIDGET BUILDER UNTUK KARTU PENGUMUMAN
-  Widget _buildAnnouncementCard({
-    required String title,
-    required String content,
-    required String tag,
-    required Color tagColor,
-    required String time,
-  }) {
+  Widget _buildAnnouncementCard(Announcement item) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -139,13 +398,15 @@ class PengumumanPage extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildTag(tag, tagColor),
+              // Mengambil warna dari getter di model
+              _buildTag(item.tag, item.tagColor),
               Row(
                 children: [
                   Icon(Icons.access_time, color: Colors.grey[400], size: 16),
                   const SizedBox(width: 4),
+                  // Menggunakan getter timeAgo
                   Text(
-                    time,
+                    item.timeAgo,
                     style: TextStyle(color: Colors.grey[600], fontSize: 12),
                   ),
                 ],
@@ -154,7 +415,7 @@ class PengumumanPage extends StatelessWidget {
           ),
           const SizedBox(height: 15),
           Text(
-            title,
+            item.title,
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -163,7 +424,7 @@ class PengumumanPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            content,
+            item.content,
             style: TextStyle(
               color: Colors.grey[700],
               fontSize: 14,
@@ -184,7 +445,6 @@ class PengumumanPage extends StatelessWidget {
     );
   }
 
-  // WIDGET BUILDER UNTUK TAG
   Widget _buildTag(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -203,10 +463,9 @@ class PengumumanPage extends StatelessWidget {
     );
   }
 
-  // WIDGET BUILDER UNTUK BOTTOM NAVIGATION BAR
   Widget _buildBottomNav(BuildContext context) {
     return BottomNavigationBar(
-      currentIndex: 3, // 3 = Pengumuman
+      currentIndex: 3, 
       onTap: (index) => _onNavTapped(context, index),
       type: BottomNavigationBarType.fixed,
       selectedItemColor: const Color(0xFF0D99FF),

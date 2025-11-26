@@ -1,15 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nexteam/home_page.dart';
 import 'package:nexteam/agenda_page.dart';
 import 'package:nexteam/pengumuman_page.dart';
 import 'package:nexteam/profil_page.dart';
 
+// Model Data Anggota (Update ada factory fromMap)
 class Member {
+  final int? id; // ID dari database (opsional untuk insert)
   final String initial;
   final String name;
   final String role;
   final String nim;
-  Member({required this.initial, required this.name, required this.role, required this.nim});
+
+  Member({
+    this.id,
+    required this.initial,
+    required this.name,
+    required this.role,
+    required this.nim,
+  });
+
+  // Helper untuk mengubah data JSON Supabase ke Object Member
+  factory Member.fromMap(Map<String, dynamic> map) {
+    String name = map['name'] ?? 'Unknown';
+    // Ambil huruf depan untuk inisial
+    String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    return Member(
+      id: map['id'],
+      initial: initial,
+      name: name,
+      role: map['role'] ?? '-',
+      nim: map['nim'] ?? '-',
+    );
+  }
 }
 
 class AnggotaPage extends StatefulWidget {
@@ -21,44 +46,32 @@ class AnggotaPage extends StatefulWidget {
 
 class _AnggotaPageState extends State<AnggotaPage> {
   final TextEditingController _searchController = TextEditingController();
-  final List<Member> _allMembers = [
-    Member(initial: 'A', name: 'Ahmad', role: 'Ketua BEM', nim: '12345678'),
-    Member(initial: 'B', name: 'Baim', role: 'Wakil Ketua BEM', nim: '12345678'),
-    Member(initial: 'C', name: 'Caca', role: 'Sekretaris', nim: '12345678'),
-    Member(initial: 'D', name: 'Donny', role: 'Bendahara', nim: '12345678'),
-    Member(initial: 'E', name: 'Ehsan', role: 'Humas', nim: '12345678'),
-    Member(initial: 'F', name: 'Fajar', role: 'Kadep PSDM', nim: '12345678'),
-    Member(initial: 'G', name: 'Gita', role: 'Kadep Medkom', nim: '12345678'),
-  ];
-  List<Member> _filteredMembers = [];
+  
+  // Stream untuk mengambil data real-time dari Supabase
+  final _membersStream = Supabase.instance.client
+      .from('members')
+      .stream(primaryKey: ['id'])
+      .order('name', ascending: true);
+
+  String _searchQuery = "";
 
   @override
   void initState() {
     super.initState();
-    _filteredMembers = _allMembers;
-    _searchController.addListener(_filterMembers);
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+      });
+    });
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_filterMembers);
     _searchController.dispose();
     super.dispose();
   }
 
-  void _filterMembers() {
-    String query = _searchController.text.toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredMembers = _allMembers;
-      } else {
-        _filteredMembers = _allMembers
-            .where((member) => member.name.toLowerCase().contains(query))
-            .toList();
-      }
-    });
-  }
-
+  // --- LOGIC NAVIGATION ---
   void _onNavTapped(BuildContext context, int index) {
     Widget page;
     switch (index) {
@@ -74,8 +87,8 @@ class _AnggotaPageState extends State<AnggotaPage> {
         page = const PengumumanPage(); 
         break;
       case 4:
-        page = const ProfilPage();
-        break;
+        // page = const ProfilPage(); // Pastikan import sesuai
+        return;
       default:
         return;
     }
@@ -90,6 +103,175 @@ class _AnggotaPageState extends State<AnggotaPage> {
     );
   }
 
+  // --- FUNGSI BARU: INSERT KE SUPABASE ---
+  Future<void> _addMemberToSupabase(String name, String role, String nim) async {
+    try {
+      await Supabase.instance.client.from('members').insert({
+        'name': name,
+        'role': role,
+        'nim': nim,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Anggota berhasil ditambahkan!')),
+        );
+        Navigator.pop(context); // Tutup dialog
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menambah anggota: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // --- DIALOG UI ---
+  void _showAddMemberDialog(BuildContext context) {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController roleController = TextEditingController();
+    final TextEditingController nimController = TextEditingController();
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder( // Pakai StatefulBuilder agar tombol bisa loading
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                constraints: const BoxConstraints(maxHeight: 500),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Input Nama
+                      _buildInputDecorated(
+                        icon: Icons.edit,
+                        hintText: "Masukkan Nama...",
+                        controller: nameController,
+                      ),
+                      const SizedBox(height: 15),
+                      // Input Jabatan
+                      _buildInputDecorated(
+                        icon: Icons.person_outline,
+                        hintText: "Isi Jabatan...",
+                        controller: roleController,
+                      ),
+                      const SizedBox(height: 15),
+                      // Input NIM
+                      _buildInputDecorated(
+                        icon: Icons.numbers,
+                        hintText: "Isi NIM...",
+                        controller: nimController,
+                        keyboardType: TextInputType.number,
+                      ),
+                      const SizedBox(height: 25),
+
+                      // Tombol DONE
+                      SizedBox(
+                        width: 150,
+                        child: ElevatedButton(
+                          onPressed: isLoading 
+                            ? null 
+                            : () async {
+                              if (nameController.text.isNotEmpty && 
+                                  roleController.text.isNotEmpty && 
+                                  nimController.text.isNotEmpty) {
+                                
+                                setStateDialog(() => isLoading = true);
+                                
+                                // Panggil fungsi simpan ke Supabase
+                                await _addMemberToSupabase(
+                                  nameController.text, 
+                                  roleController.text, 
+                                  nimController.text
+                                );
+
+                                // (Dialog ditutup di dalam fungsi _addMemberToSupabase jika sukses)
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Semua data wajib diisi")),
+                                );
+                              }
+                            },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF89CFF0),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: isLoading 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator())
+                            : const Text(
+                              "DONE",
+                              style: TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+
+  // Helper Widget Input (Sama seperti sebelumnya)
+  Widget _buildInputDecorated({
+    required IconData icon, 
+    required String hintText, 
+    required TextEditingController controller,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: const Color(0xFF89CFF0),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: Colors.blue[800], size: 24),
+        ),
+        const SizedBox(width: 15),
+        Expanded(
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF89CFF0), width: 2),
+              ),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,17 +279,50 @@ class _AnggotaPageState extends State<AnggotaPage> {
       body: Stack(
         children: [
           _buildHeader(),
+          
+          // LISTVIEW DIGANTI DENGAN STREAMBUILDER
           Padding(
             padding: const EdgeInsets.only(top: 170.0),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              itemCount: _filteredMembers.length,
-              itemBuilder: (context, index) {
-                return _buildMemberCard(_filteredMembers[index]);
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _membersStream,
+              builder: (context, snapshot) {
+                // 1. Loading State
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                // 2. Data Kosong
+                final rawData = snapshot.data!;
+                if (rawData.isEmpty) {
+                  return const Center(child: Text("Belum ada anggota."));
+                }
+
+                // 3. Filter Data (Search Logic)
+                final members = rawData.map((data) => Member.fromMap(data)).where((member) {
+                  return member.name.toLowerCase().contains(_searchQuery);
+                }).toList();
+
+                if (members.isEmpty) {
+                  return const Center(child: Text("Tidak ditemukan."));
+                }
+
+                // 4. Tampilkan List
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  itemCount: members.length,
+                  itemBuilder: (context, index) {
+                    return _buildMemberCard(members[index]);
+                  },
+                );
               },
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddMemberDialog(context),
+        backgroundColor: const Color(0xFF0D99FF),
+        child: const Icon(Icons.add, color: Colors.white, size: 30),
       ),
       bottomNavigationBar: _buildBottomNav(context),
     );
@@ -131,8 +346,6 @@ class _AnggotaPageState extends State<AnggotaPage> {
     );
   }
 
-  // --- KODE LENGKAP BUILDER ANGGOTA ---
-  
   Widget _buildHeader() {
     return Container(
       height: 200, 
@@ -207,31 +420,33 @@ class _AnggotaPageState extends State<AnggotaPage> {
             ),
           ),
           const SizedBox(width: 15),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                member.name,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+          Expanded( // Pakai Expanded biar teks panjang tidak overflow
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  member.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                member.role,
-                style: const TextStyle(
-                  color: Color(0xFF0D99FF),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 4),
+                Text(
+                  member.role,
+                  style: const TextStyle(
+                    color: Color(0xFF0D99FF),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'NIM: ${member.nim}',
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  'NIM: ${member.nim}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+              ],
+            ),
           ),
         ],
       ),

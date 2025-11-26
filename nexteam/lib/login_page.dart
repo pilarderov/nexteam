@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nexteam/home_page.dart';
 import 'package:nexteam/signup_page.dart';
-import 'package:nexteam/services/supabase_service.dart';
+import 'package:nexteam/services/supabase_service.dart'; // Pastikan import ini ada
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,39 +12,42 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // 1. Controller untuk mengambil text dari inputan
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  // 1. Controller (Ganti Username jadi Email karena Supabase butuh Email)
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   
-  // 2. Panggil Service Supabase
-  final _supabaseService = SupabaseService(); 
+  // Panggil Service
+  final _supabaseService = SupabaseService();
   
   bool _isLoading = false;
 
-  // 3. Fungsi Login dengan Validasi Lengkap
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  // 2. Fungsi Login ke Supabase
   Future<void> _login() async {
-    // Cek apakah kolom kosong
+    // Validasi input kosong
     if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email dan Password harus diisi!'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('Email dan Password harus diisi!')),
       );
       return;
     }
 
-    // Mulai Loading
     setState(() => _isLoading = true);
-    
+
     try {
-      // Panggil fungsi signIn dari Service
+      // Kirim data ke Supabase
       await _supabaseService.signIn(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // Jika sukses, pindah ke Home
+      // Jika sukses, pindah ke HomePage
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -52,43 +55,31 @@ class _LoginPageState extends State<LoginPage> {
         );
       }
     } on AuthException catch (e) {
-      // Menangkap Error dari Supabase
       if (mounted) {
-        String pesanError = e.message;
-
-        // Custom pesan jika akun tidak ditemukan / password salah
-        if (e.message.contains('Invalid login credentials')) {
-          pesanError = 'Akun tidak ditemukan atau password salah.';
+        // Handle error khusus Supabase (misal: password salah)
+        String errorMessage = e.message;
+        if (errorMessage.contains('Invalid login credentials')) {
+          errorMessage = "Email atau Password salah.";
         }
-
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(pesanError), 
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-            // Tombol pintas ke Sign Up jika error muncul
-            action: SnackBarAction(
-              label: 'DAFTAR SEKARANG',
-              textColor: Colors.yellow,
-              onPressed: () => _goToSignUp(),
-            ),
           ),
         );
       }
     } catch (e) {
-      // Error umum (koneksi, dll)
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Terjadi kesalahan koneksi'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      // Stop Loading
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Fungsi pindah ke Sign Up
   void _goToSignUp() {
     Navigator.push(
       context,
@@ -96,7 +87,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // Helper UI: Background
   Widget _buildBackground() {
     return Container(
       decoration: const BoxDecoration(
@@ -109,10 +99,9 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // Helper UI: Text Field (Sudah ditambah parameter controller)
   Widget _buildTextField({
     required String hint, 
-    required TextEditingController controller, // Wajib ada controller
+    required TextEditingController controller, 
     bool obscureText = false
   }) {
     return Container(
@@ -122,7 +111,7 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(15),
       ),
       child: TextField(
-        controller: controller, // Pasang controller disini
+        controller: controller,
         obscureText: obscureText,
         decoration: InputDecoration(
           hintText: hint,
@@ -137,10 +126,7 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background
           _buildBackground(),
-
-          // Konten Utama
           Center(
             child: SingleChildScrollView(
               child: Container(
@@ -153,12 +139,12 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    const Text(
                       'Welcome To Nexteam',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey[800],
+                        color: Colors.grey,
                       ),
                     ),
                     const SizedBox(height: 15),
@@ -172,23 +158,22 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     const SizedBox(height: 30),
                     
-                    // Input Email (Terhubung ke _emailController)
+                    // Input Email
                     _buildTextField(
-                      hint: 'Email', 
+                      hint: 'Email', // Ubah hint jadi Email
                       controller: _emailController
                     ),
                     
                     const SizedBox(height: 15),
                     
-                    // Input Password (Terhubung ke _passwordController)
+                    // Input Password
                     _buildTextField(
                       hint: 'Password', 
-                      obscureText: true, 
-                      controller: _passwordController
+                      controller: _passwordController,
+                      obscureText: true
                     ),
                     
                     const SizedBox(height: 15),
-                    
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
@@ -196,15 +181,13 @@ class _LoginPageState extends State<LoginPage> {
                         style: TextStyle(color: Colors.blue[700]),
                       ),
                     ),
-                    
                     const SizedBox(height: 25),
                     
                     // Tombol Login
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        // Jika loading, tombol dimatikan (null)
-                        onPressed: _isLoading ? null : _login,
+                        onPressed: _isLoading ? null : _login, // Disable saat loading
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue,
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -212,32 +195,25 @@ class _LoginPageState extends State<LoginPage> {
                             borderRadius: BorderRadius.circular(15),
                           ),
                         ),
-                        // Logic Tampilan Tombol: Loading vs Teks
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white, 
-                                  strokeWidth: 2
-                                ),
-                              )
-                            : const Text(
-                                'Login',
-                                style: TextStyle(color: Colors.white, fontSize: 18),
-                              ),
+                        child: _isLoading 
+                          ? const SizedBox(
+                              height: 20, width: 20, 
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            )
+                          : const Text(
+                              'Login',
+                              style: TextStyle(color: Colors.white, fontSize: 18),
+                            ),
                       ),
                     ),
                     
                     const SizedBox(height: 20),
-                    
-                    // Link ke Sign Up
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Text("Don't have account? "),
                         GestureDetector(
-                          onTap: () => _goToSignUp(),
+                          onTap: _goToSignUp,
                           child: Text(
                             'Signup',
                             style: TextStyle(

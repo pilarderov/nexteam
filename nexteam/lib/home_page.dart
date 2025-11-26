@@ -5,13 +5,18 @@ import 'package:nexteam/pengumuman_page.dart';
 import 'package:nexteam/profil_page.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  // 1. Parameter untuk nama pengguna
+  final String userName;
 
+  // Default value 'Ahmad' jika tidak ada nama yang dikirim
+  const HomePage({super.key, this.userName = 'Ahmad'});
+
+  // Fungsi Navigasi Bottom Bar
   void _onNavTapped(BuildContext context, int index) {
     Widget page;
     switch (index) {
       case 0:
-        return; 
+        return; // Sudah di halaman ini
       case 1:
         page = const AgendaPage();
         break;
@@ -19,7 +24,7 @@ class HomePage extends StatelessWidget {
         page = const AnggotaPage();
         break;
       case 3:
-        page = const PengumumanPage(); 
+        page = const PengumumanPage();
         break;
       case 4:
         page = const ProfilPage();
@@ -38,6 +43,18 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  // Fungsi Navigasi Khusus untuk Menu Grid
+  void _navigateTo(BuildContext context, Widget page) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => page,
+        transitionDuration: Duration.zero, // Transisi instan agar terasa seperti tab
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,7 +63,8 @@ class HomePage extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 20),
-            _buildMenuGrid(),
+            // Grid Menu sekarang menerima context untuk navigasi
+            _buildMenuGrid(context),
             const SizedBox(height: 30),
             _buildSectionHeader(),
             const SizedBox(height: 15),
@@ -77,8 +95,6 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  // --- KODE LENGKAP BUILDER HOMEPAGE ---
-
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       elevation: 0,
@@ -97,20 +113,21 @@ class HomePage extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // 2. Teks Nama Dinamis dari parameter userName
                   Text(
-                    'Halo, Ahmad!',
-                    style: TextStyle(
+                    'Halo, $userName!', 
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 4),
-                  Text(
+                  const SizedBox(height: 4),
+                  const Text(
                     'BEM Fakultas Teknik',
                     style: TextStyle(
                       color: Colors.white,
@@ -119,12 +136,13 @@ class HomePage extends StatelessWidget {
                   ),
                 ],
               ),
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 24,
                 backgroundColor: Colors.white,
+                // Inisial Dinamis (Huruf pertama dari nama)
                 child: Text(
-                  'A',
-                  style: TextStyle(
+                  userName.isNotEmpty ? userName[0].toUpperCase() : 'A',
+                  style: const TextStyle(
                     color: Color(0xFF0D99FF),
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -138,7 +156,7 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuGrid() {
+  Widget _buildMenuGrid(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0),
       child: Column(
@@ -146,17 +164,23 @@ class HomePage extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // Tombol Agenda (Sekarang Bisa Diklik)
               _buildMenuCard(
+                context: context,
                 icon: Icons.calendar_today,
                 title: 'Agenda',
                 color: Colors.blue.shade100,
                 iconColor: Colors.blue.shade800,
+                destinationPage: const AgendaPage(),
               ),
+              // Tombol Anggota
               _buildMenuCard(
+                context: context,
                 icon: Icons.people,
                 title: 'Anggota',
                 color: Colors.pink.shade100,
                 iconColor: Colors.pink.shade800,
+                destinationPage: const AnggotaPage(),
               ),
             ],
           ),
@@ -164,17 +188,23 @@ class HomePage extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // Tombol Aspirasi (Sementara diarahkan ke Pengumuman, bisa diganti nanti)
               _buildMenuCard(
+                context: context,
                 icon: Icons.chat_bubble_outline,
                 title: 'Aspirasi',
                 color: Colors.green.shade100,
                 iconColor: Colors.green.shade800,
+                destinationPage: const PengumumanPage(), 
               ),
+              // Tombol Pemberitahuan (Ke halaman Pengumuman)
               _buildMenuCard(
+                context: context,
                 icon: Icons.notifications_none,
                 title: 'Pemberitahuan',
                 color: Colors.orange.shade100,
                 iconColor: Colors.orange.shade800,
+                destinationPage: const PengumumanPage(),
               ),
             ],
           ),
@@ -183,47 +213,53 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  // Widget Menu Card Diperbarui dengan GestureDetector/InkWell untuk navigasi
   Widget _buildMenuCard({
+    required BuildContext context,
     required IconData icon,
     required String title,
     required Color color,
     required Color iconColor,
+    required Widget destinationPage, // Parameter baru untuk tujuan halaman
   }) {
-    return Container(
-      width: 155,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(15),
+    return GestureDetector(
+      onTap: () => _navigateTo(context, destinationPage),
+      child: Container(
+        width: 155,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
-            child: Icon(icon, size: 30, color: iconColor),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, size: 30, color: iconColor),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
